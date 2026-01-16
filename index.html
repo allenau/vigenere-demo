@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizing the Vigenère Cipher</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f4f4f9; color: #333; }
+        h1, h2, h3 { color: #2c3e50; }
+        
+        .container { display: grid; grid-template-columns: 1fr; gap: 20px; }
+        .box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        
+        .analysis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        
+        label { display: block; margin-top: 10px; font-weight: bold; }
+        select, textarea, input[type=text] { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px; }
+        textarea { height: 80px; font-family: monospace; font-size: 0.9em; }
+        
+        .ciphertext-display {
+            height: 120px;
+            font-family: monospace;
+            padding: 10px;
+            border: 1px solid #ddd;
+            background: #ffffff;
+            border-radius: 4px;
+            overflow-y: auto;
+            color: #bdc3c7; /* Dimmed by default */
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .highlight {
+            background-color: #f1c40f;
+            color: #2c3e50;
+            font-weight: bold;
+            border-radius: 2px;
+            padding: 0 1px;
+        }
+
+        input[type=range] { width: 100%; margin: 10px 0; }
+        
+        .chart-container { position: relative; height: 300px; width: 100%; }
+
+        /* Unified Control Panel */
+        .control-panel {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            flex: 1;
+            min-width: 200px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-weight: bold;
+            font-size: 1.4em;
+            display: block;
+            margin-top: 5px;
+        }
+
+        /* Stepper & Shift Buttons */
+        .stepper-controls, .shift-controls {
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            gap: 10px; 
+            background: white; 
+            padding: 5px 10px; 
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            width: fit-content;
+            margin: 10px auto 0;
+        }
+        
+        button {
+            background: #3498db; color: white; border: none; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 1.2em;
+        }
+        button:hover { background: #2980b9; }
+
+        .stream-display {
+            font-family: monospace;
+            background: #333;
+            color: #0f0;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: nowrap;
+            margin-bottom: 15px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+        }
+
+        /* Status Colors */
+        .text-good { color: #27ae60; }
+        .text-bad { color: #c0392b; }
+        .text-medium { color: #f39c12; }
+
+        /* Responsive adjustments */
+        @media (max-width: 900px) {
+            .analysis-grid { grid-template-columns: 1fr; }
+            .control-panel { flex-direction: column; align-items: stretch; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Break the Vigenère Cipher</h1>
+    <p>Use frequency analysis to find the key length, then shift each stream to reveal the key.</p>
+
+    <div class="container">
+        <!-- SECTION 1: ENCRYPTION -->
+        <div class="box">
+            <h2>1. Create Ciphertext</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div>
+                    <label>Choose Text:</label>
+                    <select id="presetSelect" onchange="loadPreset()">
+                        <option value="custom">-- Custom / Paste --</option>
+                        <option value="sherlock">Sherlock Holmes</option>
+                        <option value="gatsby">The Great Gatsby</option>
+                        <option value="dickens">Charles Dickens (Long)</option>
+                    </select>
+                </div>
+                <div>
+                     <div style="display: flex; gap: 10px;">
+                        <div style="flex: 1;">
+                            <label>Secret Key:</label>
+                            <input type="text" id="key" value="CAT" oninput="runEncryption()" placeholder="e.g. CAT">
+                        </div>
+                        <div style="flex: 1;">
+                            <label>Length:</label>
+                            <input type="text" id="realKeyLength" readonly style="background: #eee;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 10px;">
+                <div>
+                    <label>Plaintext:</label>
+                    <textarea id="plaintext" oninput="runEncryption()"></textarea>
+                </div>
+                <div>
+                    <label>Ciphertext (Result):</label>
+                    <div id="ciphertext" class="ciphertext-display"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 2: ANALYSIS -->
+        <div class="box">
+            <h2>2. Analyze Frequency</h2>
+            
+            <div class="control-panel">
+                
+                <!-- 1. KEY LENGTH -->
+                <div class="control-group">
+                    <label style="margin-top:0;">1. Guess Key Length ($n$)</label>
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px;">
+                        <input type="range" id="guessSlider" min="1" max="20" value="1" oninput="updateSliders()">
+                        <span id="guessVal" style="font-weight: bold; color: #e74c3c; font-size: 1.5em; min-width: 30px;">1</span>
+                    </div>
+                </div>
+
+                <!-- 2. STREAM SELECTOR -->
+                <div class="control-group">
+                    <label style="margin-top:0;">2. Select Stream (Offset)</label>
+                    <div class="stepper-controls">
+                        <button onclick="changeStream(-1)">&#8592;</button>
+                        <span id="streamVal" style="text-align: center; color: #3498db; font-weight: bold; min-width: 25px; font-size: 1.2em;">1</span>
+                        <button onclick="changeStream(1)">&#8594;</button>
+                    </div>
+
+                    <div style="margin-top: 15px;">
+                        <span style="font-size: 0.9em; color: #666;">IoC ($\sum q_i^2$)</span>
+                        <span id="iocScore" class="metric-value text-medium">0.000</span>
+                    </div>
+                </div>
+
+                <!-- 3. SHIFT -->
+                <div class="control-group">
+                    <label style="margin-top:0;">3. Shift Distribution</label>
+                    <div class="shift-controls">
+                        <button onclick="changeShift(-1)">&#8592;</button>
+                        <span id="shiftDisplay" style="min-width: 60px; text-align: center; font-weight: bold; font-size: 1.1em;">0 (A)</span>
+                        <button onclick="changeShift(1)">&#8594;</button>
+                    </div>
+                    
+                    <div style="margin-top: 15px;">
+                        <span style="font-size: 0.9em; color: #666;">Similarity Score ($\sum p_i q_i$)</span>
+                        <span id="matchScore" class="metric-value text-medium">0.000</span>
+                    </div>
+                </div>
+            </div>
+
+            <label>Selected Stream Content (Highlighted in Ciphertext above):</label>
+            <div class="stream-display" id="streamText">...</div>
+
+            <div class="analysis-grid">
+                <!-- LEFT: ENGLISH -->
+                <div>
+                    <h4 style="text-align: center; margin: 0 0 5px 0;">Standard English</h4>
+                    <div class="chart-container">
+                        <canvas id="englishChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- RIGHT: STREAM -->
+                <div>
+                    <h4 style="text-align: center; margin: 0 0 5px 0;">Selected Stream (Shifted)</h4>
+                    <div class="chart-container">
+                        <canvas id="cipherChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin-top: 15px; font-size: 0.9em; color: #666;">
+                <strong>How to use:</strong> Adjust Key Length until the blue graph looks "spiky" (peaks and valleys). Then Shift until the peaks match English. <br>The Score helps confirm if your shift is correct (Target: > 0.055).
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA ---
+        const presets = {
+            sherlock: "TO SHERLOCK HOLMES SHE IS ALWAYS THE WOMAN I HAVE SELDOM HEARD HIM MENTION HER UNDER ANY OTHER NAME IN HIS EYES SHE ECLIPSES AND PREDOMINATES THE WHOLE OF HER SEX IT WAS NOT THAT HE FELT ANY EMOTION AKIN TO LOVE FOR IRENE ADLER",
+            gatsby: "IN MY YOUNGER AND MORE VULNERABLE YEARS MY FATHER GAVE ME SOME ADVICE THAT I HAVE BEEN TURNING OVER IN MY MIND EVER SINCE WHENEVER YOU FEEL LIKE CRITICIZING ANY ONE HE TOLD ME JUST REMEMBER THAT ALL THE PEOPLE IN THIS WORLD HAVENT HAD THE ADVANTAGES THAT YOUVE HAD",
+            dickens: "IT WAS THE BEST OF TIMES IT WAS THE WORST OF TIMES IT WAS THE AGE OF WISDOM IT WAS THE AGE OF FOOLISHNESS IT WAS THE EPOCH OF BELIEF IT WAS THE EPOCH OF INCREDULITY IT WAS THE SEASON OF LIGHT IT WAS THE SEASON OF DARKNESS IT WAS THE SPRING OF HOPE IT WAS THE WINTER OF DESPAIR WE HAD EVERYTHING BEFORE US WE HAD NOTHING BEFORE US WE WERE ALL GOING DIRECT TO HEAVEN WE WERE ALL GOING DIRECT THE OTHER WAY IN SHORT THE PERIOD WAS SO FAR LIKE THE PRESENT PERIOD THAT SOME OF ITS NOISIEST AUTHORITIES INSISTED ON ITS BEING RECEIVED FOR GOOD OR FOR EVIL IN THE SUPERLATIVE DEGREE OF COMPARISON ONLY"
+        };
+
+        const standardEnglishRaw = {
+            'A': 8.2, 'B': 1.5, 'C': 2.8, 'D': 4.3, 'E': 13.0, 'F': 2.2, 'G': 2.0, 'H': 6.1, 'I': 7.0, 'J': 0.15, 'K': 0.77, 'L': 4.0, 'M': 2.4, 'N': 6.7, 'O': 7.5, 'P': 1.9, 'Q': 0.095, 'R': 6.0, 'S': 6.3, 'T': 9.1, 'U': 2.8, 'V': 0.98, 'W': 2.4, 'X': 0.15, 'Y': 2.0, 'Z': 0.074
+        };
+
+        // Convert to Probabilities
+        const standardEnglish = {};
+        for (let key in standardEnglishRaw) {
+            standardEnglish[key] = standardEnglishRaw[key] / 100;
+        }
+
+        let currentShift = 0;
+        let currentStream = 1;
+        let englishChart, cipherChart;
+        let latestCiphertext = ""; 
+
+        // --- CHART SETUP ---
+        function initCharts() {
+            const labels = Object.keys(standardEnglish);
+            const englishData = Object.values(standardEnglish);
+
+            const ctxEng = document.getElementById('englishChart').getContext('2d');
+            englishChart = new Chart(ctxEng, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'English Probability',
+                        data: englishData,
+                        backgroundColor: 'rgba(100, 100, 100, 0.6)',
+                        borderColor: 'rgba(50, 50, 50, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, max: 0.18 } }
+                }
+            });
+
+            const ctxCiph = document.getElementById('cipherChart').getContext('2d');
+            cipherChart = new Chart(ctxCiph, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Stream Probability',
+                        data: Array(26).fill(0),
+                        backgroundColor: 'rgba(52, 152, 219, 0.7)',
+                        borderColor: 'rgba(41, 128, 185, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, max: 0.18 } }
+                }
+            });
+        }
+
+        // --- LOGIC ---
+
+        function loadPreset() {
+            const select = document.getElementById('presetSelect');
+            const plaintext = document.getElementById('plaintext');
+            if(select.value !== 'custom') {
+                plaintext.value = presets[select.value];
+            } else {
+                plaintext.value = "";
+            }
+            runEncryption();
+        }
+
+        function cleanText(text) {
+            return text.toUpperCase().replace(/[^A-Z]/g, '');
+        }
+
+        function runEncryption() {
+            const pText = cleanText(document.getElementById('plaintext').value);
+            const key = cleanText(document.getElementById('key').value);
+            document.getElementById('realKeyLength').value = key.length > 0 ? key.length : 1;
+
+            if (pText.length === 0 || key.length === 0) {
+                latestCiphertext = "";
+                document.getElementById('ciphertext').innerText = "";
+                updateAnalysis();
+                return;
+            }
+
+            let cText = "";
+            for (let i = 0; i < pText.length; i++) {
+                const pChar = pText.charCodeAt(i) - 65;
+                const kChar = key.charCodeAt(i % key.length) - 65;
+                const cChar = (pChar + kChar) % 26;
+                cText += String.fromCharCode(cChar + 65);
+            }
+
+            latestCiphertext = cText;
+            updateAnalysis();
+        }
+
+        function changeShift(amount) {
+            currentShift = (currentShift + amount);
+            if (currentShift < 0) currentShift = 25;
+            if (currentShift > 25) currentShift = 0;
+            updateShiftDisplay();
+            updateAnalysis();
+        }
+
+        function updateShiftDisplay() {
+            const char = String.fromCharCode(65 + currentShift);
+            document.getElementById('shiftDisplay').innerText = `${currentShift} (${char})`;
+        }
+        
+        function changeStream(amount) {
+            const guessN = parseInt(document.getElementById('guessSlider').value);
+            currentStream += amount;
+            if (currentStream > guessN) currentStream = 1;
+            if (currentStream < 1) currentStream = guessN;
+            currentShift = 0; 
+            updateShiftDisplay();
+            updateAnalysis();
+        }
+
+        function updateSliders() {
+            const guessN = parseInt(document.getElementById('guessSlider').value);
+            document.getElementById('guessVal').innerText = guessN;
+            if (currentStream > guessN) currentStream = 1;
+            updateAnalysis();
+        }
+
+        function updateAnalysis() {
+            if (!latestCiphertext) return; // Safety check
+
+            const guessN = parseInt(document.getElementById('guessSlider').value);
+            const streamSliderVal = currentStream; 
+            document.getElementById('streamVal').innerText = streamSliderVal;
+
+            const offset = streamSliderVal - 1; 
+
+            // 1. Highlight Ciphertext
+            let html = "";
+            for (let i = 0; i < latestCiphertext.length; i++) {
+                if (i >= offset && (i - offset) % guessN === 0) {
+                     html += `<span class="highlight">${latestCiphertext[i]}</span>`;
+                } else {
+                     html += latestCiphertext[i]; 
+                }
+            }
+            document.getElementById('ciphertext').innerHTML = html;
+
+            // 2. Extract Stream
+            let stream = "";
+            for (let i = offset; i < latestCiphertext.length; i += guessN) {
+                stream += latestCiphertext[i];
+            }
+            
+            const displayStream = stream.length > 50 ? stream.substring(0, 50) + "..." : stream;
+            document.getElementById('streamText').innerText = displayStream;
+
+            // 3. Probabilities
+            const counts = new Array(26).fill(0);
+            for (let char of stream) {
+                counts[char.charCodeAt(0) - 65]++;
+            }
+            const total = stream.length;
+            const rawProbabilities = counts.map(count => total > 0 ? (count / total) : 0);
+
+            // Calculate IoC (Sum of squares of probabilities)
+            let ioc = 0;
+            for (let p of rawProbabilities) {
+                ioc += p * p;
+            }
+            const iocElem = document.getElementById('iocScore');
+            iocElem.innerText = ioc.toFixed(3);
+             if (ioc > 0.055) iocElem.className = "metric-value text-good";
+            else if (ioc < 0.045) iocElem.className = "metric-value text-bad";
+            else iocElem.className = "metric-value text-medium";
+
+            // 4. Shift & Match
+            const shiftedProbabilities = new Array(26);
+            for(let i=0; i<26; i++) {
+                shiftedProbabilities[i] = rawProbabilities[(i + currentShift) % 26];
+            }
+
+            let matchScore = 0;
+            const englishVals = Object.values(standardEnglish);
+            for(let i=0; i<26; i++) {
+                matchScore += englishVals[i] * shiftedProbabilities[i];
+            }
+            
+            const matchElem = document.getElementById('matchScore');
+            matchElem.innerText = matchScore.toFixed(3);
+
+            if (matchScore > 0.055) matchElem.className = "metric-value text-good";
+            else if (matchScore < 0.045) matchElem.className = "metric-value text-bad";
+            else matchElem.className = "metric-value text-medium";
+
+            // Update Chart
+            cipherChart.data.datasets[0].data = shiftedProbabilities;
+            cipherChart.update();
+        }
+
+        // Init
+        initCharts();
+        loadPreset();
+        updateShiftDisplay();
+    </script>
+</body>
+</html>
