@@ -20,6 +20,10 @@ If you prefer a manual Pages setup, go to your repository Settings → Pages and
 - `index.html` — interactive visualizer (already in this repo).
 - `.github/workflows/deploy.yml` — GitHub Actions workflow to deploy to GitHub Pages automatically.
 
+## Live Demo
+
+The site is published at: https://allenau.github.io/vigenere-demo/
+
 ## Acknowledgement / Attribution
 
 This project's code were generated with assistance from Google Gemini (a generative AI). 
